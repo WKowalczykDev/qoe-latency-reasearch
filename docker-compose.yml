@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  qoe:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./videos:/app/videos
+      - ./data:/app/data

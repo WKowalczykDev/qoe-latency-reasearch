@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.env
+.venv/
+venv/
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# Docker
+*.log
+
+# Dane lokalne / eksperymenty
+data/
+videos/
+ratings_export.csv
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testy / coverage
+.coverage
+htmlcov/

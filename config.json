@@ -1,0 +1,10 @@
+{
+  "http_user_name": "admin",
+  "http_user_password": "test123",
+  "http_port": 8080,
+  "shuffle": true,
+  "questions": {
+    "comprehension": "Jak dobrze rozumiałeś co się dzieje?",
+    "comfort": "Jak komfortowe było oglądanie?"
+  }
+}
