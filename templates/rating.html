@@ -182,7 +182,7 @@
             currentVideoData = data;
 
             document.getElementById('progress').textContent =
-                `Film ${data.index} / ${data.total} (Część ${data.part_number}, opóźnienie: ${data.delay_ms}ms)`;
+                `Film ${data.index} / ${data.total} (Część ${data.part_number}`;
 
             document.getElementById('question1').textContent = data.questions.comprehension;
             document.getElementById('question2').textContent = data.questions.comfort;
