@@ -6,4 +6,5 @@ services:
       - "8080:8080"
     volumes:
       - ./videos:/app/videos
-      - ./data:/app/subtitles
+      - ./subtitles:/app/subtitles
+      - ./data:/app/data

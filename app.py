@@ -16,26 +16,56 @@ CONFIG_PATH = "config.json"
 # Fixed delays in milliseconds
 DELAYS = [0, 500, 800, 1200, 2500]
 
+
 def load_config():
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
+
 
 def init_db():
     os.makedirs("data", exist_ok=True)
     with sqlite3.connect(DB_PATH) as con:
         con.execute("""
-            CREATE TABLE IF NOT EXISTS ratings(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                participant_id TEXT NOT NULL,
-                video TEXT NOT NULL,
-                subtitle TEXT NOT NULL,
-                delay_ms INTEGER NOT NULL,
-                comprehension_rating INTEGER NOT NULL,
-                comfort_rating INTEGER NOT NULL,
-                comments TEXT,
-                timestamp TEXT NOT NULL
-            )
-        """)
+                    CREATE TABLE IF NOT EXISTS ratings
+                    (
+                        id
+                        INTEGER
+                        PRIMARY
+                        KEY
+                        AUTOINCREMENT,
+                        participant_id
+                        TEXT
+                        NOT
+                        NULL,
+                        video
+                        TEXT
+                        NOT
+                        NULL,
+                        subtitle
+                        TEXT
+                        NOT
+                        NULL,
+                        delay_ms
+                        INTEGER
+                        NOT
+                        NULL,
+                        comprehension_rating
+                        INTEGER
+                        NOT
+                        NULL,
+                        comfort_rating
+                        INTEGER
+                        NOT
+                        NULL,
+                        comments
+                        TEXT,
+                        timestamp
+                        TEXT
+                        NOT
+                        NULL
+                    )
+                    """)
+
 
 def get_video_pairs():
     """Get matched video-subtitle pairs based on numbering"""
@@ -57,6 +87,7 @@ def get_video_pairs():
         })
 
     return pairs
+
 
 def create_playlist():
     """Create playlist: 15 videos with random delays, each video shown once"""
@@ -80,6 +111,7 @@ def create_playlist():
 
     return playlist, None
 
+
 def shift_subtitle_timing(srt_content, delay_ms):
     """Shift all subtitle timings by delay_ms milliseconds"""
     if delay_ms == 0:
@@ -102,6 +134,7 @@ def shift_subtitle_timing(srt_content, delay_ms):
             result.append(line)
 
     return '\n'.join(result)
+
 
 def shift_time(time_str, delay_ms):
     """Shift a single SRT timestamp by delay_ms"""
@@ -127,6 +160,7 @@ def shift_time(time_str, delay_ms):
     except:
         return time_str
 
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -135,12 +169,15 @@ def require_auth(f):
         if not auth or auth.username != config['http_user_name'] or auth.password != config['http_user_password']:
             return ('Authentication required', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
         return f(*args, **kwargs)
+
     return decorated
+
 
 @app.route('/')
 @require_auth
 def index():
     return render_template('rating.html')
+
 
 @app.route('/start', methods=['POST'])
 def start_session():
@@ -160,6 +197,7 @@ def start_session():
     session['current_index'] = 0
 
     return jsonify({'success': True, 'total_videos': len(playlist)})
+
 
 @app.route('/next_video')
 def next_video():
@@ -185,40 +223,51 @@ def next_video():
         'questions': config['questions']
     })
 
+
 @app.route('/submit_rating', methods=['POST'])
 def submit_rating():
     if 'participant_id' not in session:
+        print("ERROR: No active session")
         return jsonify({'error': 'No active session'}), 400
 
     data = request.get_json()
+    print(f"Received rating data: {data}")
+
     idx = session.get('current_index', 0)
     playlist = session.get('playlist', [])
 
     if idx >= len(playlist):
+        print(f"ERROR: Index {idx} >= playlist length {len(playlist)}")
         return jsonify({'error': 'No more videos'}), 400
 
     item = playlist[idx]
+    print(f"Saving rating for: {item}")
 
-    with sqlite3.connect(DB_PATH) as con:
-        con.execute("""
-            INSERT INTO ratings(
-                participant_id, video, subtitle, delay_ms,
-                comprehension_rating, comfort_rating, comments, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            session['participant_id'],
-            item['video'],
-            item['subtitle'],
-            item['delay_ms'],
-            data['comprehension_rating'],
-            data['comfort_rating'],
-            data.get('comments', ''),
-            datetime.utcnow().isoformat()
-        ))
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            con.execute("""
+                        INSERT INTO ratings(participant_id, video, subtitle, delay_ms,
+                                            comprehension_rating, comfort_rating, comments, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            session['participant_id'],
+                            item['video'],
+                            item['subtitle'],
+                            item['delay_ms'],
+                            data['comprehension_rating'],
+                            data['comfort_rating'],
+                            data.get('comments', ''),
+                            datetime.utcnow().isoformat()
+                        ))
 
-    session['current_index'] = idx + 1
+        session['current_index'] = idx + 1
+        print(f"Rating saved successfully. Next index: {idx + 1}")
+        return jsonify({'success': True})
 
-    return jsonify({'success': True})
+    except Exception as e:
+        print(f"ERROR saving rating: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/videos/<path:filename>')
 def serve_video(filename):
@@ -235,6 +284,7 @@ def serve_video(filename):
 
     return send_from_directory('videos', filename, mimetype=mimetype)
 
+
 @app.route('/subtitles/<path:filename>')
 def serve_subtitle(filename):
     delay_ms = request.args.get('delay', 0, type=int)
@@ -250,16 +300,20 @@ def serve_subtitle(filename):
 
     return Response(shifted_content, mimetype='text/plain; charset=utf-8')
 
+
 @app.route('/debug/files')
 @require_auth
 def debug_files():
     """Debug endpoint to check available files"""
     pairs = get_video_pairs()
     return jsonify({
-        'video_count': len([f for f in os.listdir('videos') if f.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))]),
-        'subtitle_count': len([f for f in os.listdir('subtitles') if f.lower().endswith('.srt')]),
+        'video_count': len([f for f in os.listdir('videos') if
+                            f.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))]) if os.path.exists('videos') else 0,
+        'subtitle_count': len([f for f in os.listdir('subtitles') if f.lower().endswith('.srt')]) if os.path.exists(
+            'subtitles') else 0,
         'pairs': pairs
     })
+
 
 @app.route('/export')
 @require_auth
@@ -268,11 +322,17 @@ def export_csv():
 
     with sqlite3.connect(DB_PATH) as con:
         rows = con.execute("""
-            SELECT id,participant_id,video,subtitle,delay_ms,
-                   comprehension_rating,comfort_rating,comments, timestamp
-            FROM ratings
-            ORDER BY timestamp
-        """).fetchall()
+                           SELECT id,
+                                  participant_id,
+                                  video,
+                                  subtitle,
+                                  delay_ms,
+                                  comprehension_rating,
+                                  comfort_rating,
+                                  comments, timestamp
+                           FROM ratings
+                           ORDER BY timestamp
+                           """).fetchall()
 
     with open(csv_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
@@ -284,7 +344,16 @@ def export_csv():
 
     return send_from_directory('data', 'ratings_export.csv', as_attachment=True)
 
+
 if __name__ == '__main__':
     init_db()
     config = load_config()
-    app.run(host='0.0.0.0', port=config['http_port'], debug=False)
+    print(f"Starting server on port {config['http_port']}")
+    print(f"Videos directory exists: {os.path.exists('videos')}")
+    print(f"Subtitles directory exists: {os.path.exists('subtitles')}")
+    if os.path.exists('videos'):
+        print(
+            f"Video files: {[f for f in os.listdir('videos') if f.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))]}")
+    if os.path.exists('subtitles'):
+        print(f"Subtitle files: {[f for f in os.listdir('subtitles') if f.lower().endswith('.srt')]}")
+    app.run(host='0.0.0.0', port=config['http_port'], debug=True)

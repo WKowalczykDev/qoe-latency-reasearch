@@ -14,6 +14,11 @@
             max-width: 800px;
             background: #000;
         }
+        video::cue {
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-size: 20px;
+        }
         .hidden { display: none; }
         .section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; }
         button {
@@ -28,6 +33,12 @@
             font-size: 18px;
             margin: 10px 0;
         }
+        .error {
+            color: red;
+            padding: 10px;
+            background: #fee;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
@@ -39,15 +50,20 @@
     <p>Obejrzyj filmy i oceń je.</p>
     <label>Twój ID: <input id="participantId" required></label><br><br>
     <button onclick="startTest()">Start</button>
+    <div id="startError" class="error hidden"></div>
 </div>
 
 <div id="videoScreen" class="hidden section">
     <div class="progress" id="progress"></div>
-    <video id="videoPlayer" controls></video>
+    <video id="videoPlayer" controls crossorigin="anonymous">
+        <track kind="subtitles" id="subtitleTrack" label="Polski" srclang="pl">
+    </video>
     <div style="margin-top: 20px;">
-        <button onclick="videoPlayer.play()">Play</button>
-        <button onclick="videoPlayer.pause()">Pause</button>
+        <button onclick="document.getElementById('videoPlayer').play()">Play</button>
+        <button onclick="document.getElementById('videoPlayer').pause()">Pause</button>
+        <button onclick="toggleSubtitles()">Napisy ON/OFF</button>
     </div>
+    <div id="videoError" class="error hidden"></div>
 </div>
 
 <div id="ratingScreen" class="hidden section">
@@ -71,6 +87,7 @@
     </div>
 
     <button onclick="submitRating()">Dalej</button>
+    <div id="ratingError" class="error hidden"></div>
 </div>
 
 <div id="completionScreen" class="hidden section">
@@ -80,6 +97,8 @@
 </div>
 
 <script>
+    let currentVideoData = null;
+
     document.getElementById('comprehension').oninput = (e) => {
         document.getElementById('val1').textContent = e.target.value;
     };
@@ -92,77 +111,167 @@
         document.getElementById('ratingScreen').classList.remove('hidden');
     };
 
+    function toggleSubtitles() {
+        const track = document.getElementById('subtitleTrack');
+        track.track.mode = track.track.mode === 'showing' ? 'hidden' : 'showing';
+    }
+
+    function showError(elementId, message) {
+        const el = document.getElementById(elementId);
+        el.textContent = message;
+        el.classList.remove('hidden');
+        console.error(message);
+    }
+
+    function hideError(elementId) {
+        document.getElementById(elementId).classList.add('hidden');
+    }
+
     async function startTest() {
+        hideError('startError');
         const participantId = document.getElementById('participantId').value.trim();
         if (!participantId) {
-            alert('Podaj ID');
+            showError('startError', 'Podaj ID uczestnika');
             return;
         }
 
-        const response = await fetch('/start', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({participant_id: participantId})
-        });
+        try {
+            const response = await fetch('/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({participant_id: participantId})
+            });
 
-        if (response.ok) {
-            document.getElementById('startScreen').classList.add('hidden');
-            loadNextVideo();
-        } else {
-            alert('Błąd');
+            const data = await response.json();
+
+            if (response.ok) {
+                document.getElementById('startScreen').classList.add('hidden');
+                loadNextVideo();
+            } else {
+                showError('startError', 'Błąd: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            showError('startError', 'Błąd połączenia: ' + error.message);
         }
     }
 
     async function loadNextVideo() {
-        const response = await fetch('/next_video');
-        const data = await response.json();
+        hideError('videoError');
 
-        if (data.completed) {
-            document.getElementById('videoScreen').classList.add('hidden');
+        try {
+            const response = await fetch('/next_video');
+
+            if (!response.ok) {
+                throw new Error('Błąd pobierania danych wideo');
+            }
+
+            const data = await response.json();
+
+            if (data.completed) {
+                document.getElementById('videoScreen').classList.add('hidden');
+                document.getElementById('ratingScreen').classList.add('hidden');
+                document.getElementById('completionScreen').classList.remove('hidden');
+                return;
+            }
+
+            currentVideoData = data;
+
+            document.getElementById('progress').textContent =
+                `Film ${data.index} / ${data.total} (Część ${data.part_number}, opóźnienie: ${data.delay_ms}ms)`;
+
+            document.getElementById('question1').textContent = data.questions.comprehension;
+            document.getElementById('question2').textContent = data.questions.comfort;
+
+            const videoPlayer = document.getElementById('videoPlayer');
+            const subtitleTrack = document.getElementById('subtitleTrack');
+
+            // Clear previous sources
+            videoPlayer.pause();
+            videoPlayer.removeAttribute('src');
+            videoPlayer.load();
+
+            // Set new video source
+            const videoUrl = `/videos/${data.video}`;
+            console.log('Loading video:', videoUrl);
+            videoPlayer.src = videoUrl;
+
+            // Set subtitle source with delay
+            const subtitleUrl = `/subtitles/${data.subtitle}?delay=${data.delay_ms}`;
+            console.log('Loading subtitles:', subtitleUrl);
+            subtitleTrack.src = subtitleUrl;
+            subtitleTrack.track.mode = 'showing';
+
+            document.getElementById('comprehension').value = 3;
+            document.getElementById('comfort').value = 3;
+            document.getElementById('val1').textContent = 3;
+            document.getElementById('val2').textContent = 3;
+            document.getElementById('comments').value = '';
+
+            document.getElementById('videoScreen').classList.remove('hidden');
             document.getElementById('ratingScreen').classList.add('hidden');
-            document.getElementById('completionScreen').classList.remove('hidden');
-            return;
+
+            // Load and play
+            videoPlayer.load();
+
+            videoPlayer.addEventListener('loadedmetadata', function onLoaded() {
+                console.log('Video loaded successfully');
+                videoPlayer.removeEventListener('loadedmetadata', onLoaded);
+            });
+
+            videoPlayer.addEventListener('error', function onError(e) {
+                console.error('Video error:', e, videoPlayer.error);
+                showError('videoError', 'Błąd ładowania wideo: ' + (videoPlayer.error?.message || 'Unknown'));
+            });
+
+            // Try to autoplay
+            setTimeout(() => {
+                videoPlayer.play().catch((error) => {
+                    console.log('Autoplay prevented:', error);
+                });
+            }, 100);
+
+        } catch (error) {
+            showError('videoError', 'Błąd: ' + error.message);
         }
-
-        document.getElementById('progress').textContent =
-            `Film ${data.index} / ${data.total}`;
-
-        document.getElementById('question1').textContent = data.questions.comprehension;
-        document.getElementById('question2').textContent = data.questions.comfort;
-
-        const videoPlayer = document.getElementById('videoPlayer');
-        videoPlayer.src = `/videos/${data.filename}`;
-
-        document.getElementById('comprehension').value = 3;
-        document.getElementById('comfort').value = 3;
-        document.getElementById('val1').textContent = 3;
-        document.getElementById('val2').textContent = 3;
-        document.getElementById('comments').value = '';
-
-        document.getElementById('videoScreen').classList.remove('hidden');
-        document.getElementById('ratingScreen').classList.add('hidden');
-
-        videoPlayer.load();
-        videoPlayer.play().catch(() => {});
     }
 
     async function submitRating() {
+        hideError('ratingError');
+
+        const comprehension = parseInt(document.getElementById('comprehension').value);
+        const comfort = parseInt(document.getElementById('comfort').value);
+        const comments = document.getElementById('comments').value;
+
+        if (!comprehension || !comfort) {
+            showError('ratingError', 'Wybierz oceny');
+            return;
+        }
+
         const rating = {
-            comprehension_rating: parseInt(document.getElementById('comprehension').value),
-            comfort_rating: parseInt(document.getElementById('comfort').value),
-            comments: document.getElementById('comments').value
+            comprehension_rating: comprehension,
+            comfort_rating: comfort,
+            comments: comments
         };
 
-        const response = await fetch('/submit_rating', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(rating)
-        });
+        console.log('Submitting rating:', rating);
 
-        if (response.ok) {
-            loadNextVideo();
-        } else {
-            alert('Błąd');
+        try {
+            const response = await fetch('/submit_rating', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(rating)
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                console.log('Rating saved successfully');
+                loadNextVideo();
+            } else {
+                showError('ratingError', 'Błąd zapisu: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            showError('ratingError', 'Błąd połączenia: ' + error.message);
         }
     }
 </script>
