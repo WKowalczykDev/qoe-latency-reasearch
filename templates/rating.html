@@ -56,7 +56,7 @@
 <div id="videoScreen" class="hidden section">
     <div class="progress" id="progress"></div>
     <video id="videoPlayer" controls crossorigin="anonymous">
-        <track kind="subtitles" id="subtitleTrack" label="Polski" srclang="pl">
+        <track kind="subtitles" id="subtitleTrack" label="Polski" srclang="pl" default>
     </video>
     <div style="margin-top: 20px;">
         <button onclick="document.getElementById('videoPlayer').play()">Play</button>
@@ -113,7 +113,12 @@
 
     function toggleSubtitles() {
         const track = document.getElementById('subtitleTrack');
-        track.track.mode = track.track.mode === 'showing' ? 'hidden' : 'showing';
+        if (track.track.mode === 'showing') {
+            track.track.mode = 'hidden';
+        } else {
+            track.track.mode = 'showing';
+        }
+        console.log('Subtitle mode:', track.track.mode);
     }
 
     function showError(elementId, message) {
@@ -185,22 +190,24 @@
             const videoPlayer = document.getElementById('videoPlayer');
             const subtitleTrack = document.getElementById('subtitleTrack');
 
-            // Clear previous sources
-            videoPlayer.pause();
-            videoPlayer.removeAttribute('src');
-            videoPlayer.load();
+            // Remove all event listeners
+            const newVideoPlayer = videoPlayer.cloneNode(true);
+            videoPlayer.parentNode.replaceChild(newVideoPlayer, videoPlayer);
 
-            // Set new video source
+            const videoPlayerNew = document.getElementById('videoPlayer');
+            const subtitleTrackNew = document.getElementById('subtitleTrack');
+
+            // Set video source
             const videoUrl = `/videos/${data.video}`;
             console.log('Loading video:', videoUrl);
-            videoPlayer.src = videoUrl;
+            videoPlayerNew.src = videoUrl;
 
             // Set subtitle source with delay
             const subtitleUrl = `/subtitles/${data.subtitle}?delay=${data.delay_ms}`;
             console.log('Loading subtitles:', subtitleUrl);
-            subtitleTrack.src = subtitleUrl;
-            subtitleTrack.track.mode = 'showing';
+            subtitleTrackNew.src = subtitleUrl;
 
+            // Reset ratings
             document.getElementById('comprehension').value = 3;
             document.getElementById('comfort').value = 3;
             document.getElementById('val1').textContent = 3;
@@ -210,22 +217,53 @@
             document.getElementById('videoScreen').classList.remove('hidden');
             document.getElementById('ratingScreen').classList.add('hidden');
 
-            // Load and play
-            videoPlayer.load();
-
-            videoPlayer.addEventListener('loadedmetadata', function onLoaded() {
+            // Set up event listeners
+            videoPlayerNew.addEventListener('loadedmetadata', function() {
                 console.log('Video loaded successfully');
-                videoPlayer.removeEventListener('loadedmetadata', onLoaded);
+                console.log('Video duration:', videoPlayerNew.duration);
+
+                // Force subtitle track to load and show
+                const tracks = videoPlayerNew.textTracks;
+                if (tracks.length > 0) {
+                    tracks[0].mode = 'showing';
+                    console.log('Subtitle track mode set to showing');
+                    console.log('Number of cues:', tracks[0].cues ? tracks[0].cues.length : 0);
+                }
             });
 
-            videoPlayer.addEventListener('error', function onError(e) {
-                console.error('Video error:', e, videoPlayer.error);
-                showError('videoError', 'Błąd ładowania wideo: ' + (videoPlayer.error?.message || 'Unknown'));
+            videoPlayerNew.addEventListener('error', function(e) {
+                console.error('Video error:', e, videoPlayerNew.error);
+                showError('videoError', 'Błąd ładowania wideo: ' + (videoPlayerNew.error?.message || 'Unknown'));
             });
 
-            // Try to autoplay
+            videoPlayerNew.onended = () => {
+                document.getElementById('videoScreen').classList.add('hidden');
+                document.getElementById('ratingScreen').classList.remove('hidden');
+            };
+
+            // Load the video
+            videoPlayerNew.load();
+
+            // Monitor subtitle track loading
+            subtitleTrackNew.addEventListener('load', function() {
+                console.log('Subtitle track loaded successfully');
+                const track = subtitleTrackNew.track;
+                track.mode = 'showing';
+                console.log('Cues loaded:', track.cues ? track.cues.length : 0);
+                if (track.cues) {
+                    for (let i = 0; i < track.cues.length; i++) {
+                        console.log(`Cue ${i}: ${track.cues[i].startTime} - ${track.cues[i].endTime}: ${track.cues[i].text}`);
+                    }
+                }
+            });
+
+            subtitleTrackNew.addEventListener('error', function(e) {
+                console.error('Subtitle loading error:', e);
+            });
+
+            // Try to autoplay after a short delay
             setTimeout(() => {
-                videoPlayer.play().catch((error) => {
+                videoPlayerNew.play().catch((error) => {
                     console.log('Autoplay prevented:', error);
                 });
             }, 100);
