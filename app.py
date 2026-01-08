@@ -76,7 +76,7 @@ def get_video_pairs():
         return []
 
     videos = sorted([f for f in os.listdir(video_dir) if f.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))])
-    subtitles = sorted([f for f in os.listdir(subtitle_dir) if f.lower().endswith('.srt')])
+    subtitles = sorted([f for f in os.listdir(subtitle_dir) if f.lower().endswith('.vtt')])
 
     # Match by index: video[i] -> subtitle[i]
     pairs = []
@@ -112,22 +112,22 @@ def create_playlist():
     return playlist, None
 
 
-def shift_subtitle_timing(srt_content, delay_ms):
-    """Shift all subtitle timings by delay_ms milliseconds"""
+def shift_vtt_timing(vtt_content, delay_ms):
+    """Shift all VTT subtitle timings by delay_ms milliseconds"""
     if delay_ms == 0:
-        return srt_content
+        return vtt_content
 
-    lines = srt_content.split('\n')
+    lines = vtt_content.split('\n')
     result = []
 
     for line in lines:
-        if '-->' in line:
+        if '-->' in line and not line.startswith('WEBVTT'):
             parts = line.split('-->')
             start = parts[0].strip()
             end = parts[1].strip()
 
-            new_start = shift_time(start, delay_ms)
-            new_end = shift_time(end, delay_ms)
+            new_start = shift_vtt_time(start, delay_ms)
+            new_end = shift_vtt_time(end, delay_ms)
 
             result.append(f"{new_start} --> {new_end}")
         else:
@@ -136,11 +136,22 @@ def shift_subtitle_timing(srt_content, delay_ms):
     return '\n'.join(result)
 
 
-def shift_time(time_str, delay_ms):
-    """Shift a single SRT timestamp by delay_ms"""
+def shift_vtt_time(time_str, delay_ms):
+    """Shift a single VTT timestamp by delay_ms"""
     try:
-        time_part, ms_part = time_str.split(',')
-        h, m, s = map(int, time_part.split(':'))
+        # VTT format: HH:MM:SS.mmm or MM:SS.mmm
+        time_part, ms_part = time_str.split('.')
+
+        parts = time_part.split(':')
+
+        if len(parts) == 3:  # HH:MM:SS
+            h, m, s = map(int, parts)
+        elif len(parts) == 2:  # MM:SS
+            h = 0
+            m, s = map(int, parts)
+        else:
+            return time_str
+
         ms = int(ms_part)
 
         total_ms = (h * 3600000) + (m * 60000) + (s * 1000) + ms
@@ -156,7 +167,10 @@ def shift_time(time_str, delay_ms):
         s = total_ms // 1000
         ms = total_ms % 1000
 
-        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+        if h > 0:
+            return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+        else:
+            return f"{m:02d}:{s:02d}.{ms:03d}"
     except:
         return time_str
 
@@ -296,9 +310,9 @@ def serve_subtitle(filename):
     with open(subtitle_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    shifted_content = shift_subtitle_timing(content, delay_ms)
+    shifted_content = shift_vtt_timing(content, delay_ms)
 
-    return Response(shifted_content, mimetype='text/plain; charset=utf-8')
+    return Response(shifted_content, mimetype='text/vtt; charset=utf-8')
 
 
 @app.route('/debug/files')
@@ -309,7 +323,7 @@ def debug_files():
     return jsonify({
         'video_count': len([f for f in os.listdir('videos') if
                             f.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))]) if os.path.exists('videos') else 0,
-        'subtitle_count': len([f for f in os.listdir('subtitles') if f.lower().endswith('.srt')]) if os.path.exists(
+        'subtitle_count': len([f for f in os.listdir('subtitles') if f.lower().endswith('.vtt')]) if os.path.exists(
             'subtitles') else 0,
         'pairs': pairs
     })
@@ -355,5 +369,5 @@ if __name__ == '__main__':
         print(
             f"Video files: {[f for f in os.listdir('videos') if f.lower().endswith(('.mp4', '.mkv', '.webm', '.avi'))]}")
     if os.path.exists('subtitles'):
-        print(f"Subtitle files: {[f for f in os.listdir('subtitles') if f.lower().endswith('.srt')]}")
+        print(f"Subtitle files: {[f for f in os.listdir('subtitles') if f.lower().endswith('.vtt')]}")
     app.run(host='0.0.0.0', port=config['http_port'], debug=True)
