@@ -16,7 +16,6 @@ venv/
 
 # Dane lokalne / eksperymenty
 data/
-videos/
 ratings_export.csv
 *.csv
 
